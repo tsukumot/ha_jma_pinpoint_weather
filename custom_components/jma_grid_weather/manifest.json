@@ -1,0 +1,11 @@
+{
+  "domain": "jma_pinpoint_forecast",
+  "name": "JMA Pinpoint Forecast",
+  "codeowners": ["@tsukumot"],
+  "config_flow": true,
+  "documentation": "https://github.com/tsukumot/ha_jma_pinpoint_forecast",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/tsukumot/ha_jma_pinpoint_forecast/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
