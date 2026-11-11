@@ -1,3 +1,4 @@
+#色解析スクリプト
 from collections import Counter
 from io import BytesIO
 import requests

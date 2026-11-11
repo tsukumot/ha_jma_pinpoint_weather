@@ -76,9 +76,17 @@ def color_to_condition(rgba):
 
 
 # ---- まとめ ----
+_cache = {}  # {(緯度, 経度): (前回のtargetTimes, 前回の予報)}
+
+
 def get_forecast(lat, lon):
+    times = get_target_times()  # 小さいファイルなので毎回取る
+    cached = _cache.get((lat, lon))
+    if cached is not None and cached[0] == times:
+        return cached[1]  # targetTimesが同じなら、前回の予報をそのまま返す
+
     forecast = []
-    for t in get_target_times():
+    for t in times:  # ここで get_target_times() を呼び直さず、上で取った times を使う
         if "wm" not in t["elements"] or "temp_point" not in t["elements"]:
             continue
         pixel = get_pixel(t["basetime"], t["validtime"], "wm", lat, lon)
@@ -89,7 +97,8 @@ def get_forecast(lat, lon):
             "temperature": nearest_temp(geo, lat, lon),
         })
 
-    forecast.sort(key=lambda f: f["datetime"])  # 時刻の古い順に並べ替える
+    forecast.sort(key=lambda f: f["datetime"])
+    _cache[(lat, lon)] = (times, forecast)  # 次回のために保存する
     return forecast
 
 
