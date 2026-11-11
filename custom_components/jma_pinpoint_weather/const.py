@@ -1,4 +1,4 @@
-DOMAIN = "jma_grid_forecast"
+DOMAIN = "jma_pinpoint_weather"
 BASE = "https://www.jma.go.jp/bosai/jmatile/data/wdist"
 
 

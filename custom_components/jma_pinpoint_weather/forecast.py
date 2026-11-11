@@ -88,6 +88,8 @@ def get_forecast(lat, lon):
             "condition": color_to_condition(pixel),
             "temperature": nearest_temp(geo, lat, lon),
         })
+
+    forecast.sort(key=lambda f: f["datetime"])  # 時刻の古い順に並べ替える
     return forecast
 
 
