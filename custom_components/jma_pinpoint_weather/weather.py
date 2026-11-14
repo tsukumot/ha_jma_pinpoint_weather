@@ -5,7 +5,7 @@ from homeassistant.components.weather import (
     WeatherEntity,
     WeatherEntityFeature,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfPrecipitationDepth, UnitOfTemperature
 
 from .forecast import get_forecast
 
@@ -20,6 +20,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class RainWeather(WeatherEntity):
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
     _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
 
     def __init__(self, entry):
@@ -28,13 +29,16 @@ class RainWeather(WeatherEntity):
         self._attr_name = entry.data["name"]
         self._attr_unique_id = entry.unique_id
         self._forecast = []  # forecast.py の結果(取得前は空)
+        self._min_temp = None
+        self._max_temp = None
 
     async def async_update(self):
-        # requests は同期処理なので別スレッドで実行する
-        self._forecast = await self.hass.async_add_executor_job(
+        result = await self.hass.async_add_executor_job(
             get_forecast, self._lat, self._lon
         )
-        # 画面側で予報を購読している場合に、更新を知らせる
+        self._forecast = result["hourly"]
+        self._min_temp = result["min_temp"]
+        self._max_temp = result["max_temp"]
         await self.async_update_listeners(["hourly"])
 
     # ---- 現在の状態(予報の先頭を使う) ----
@@ -54,6 +58,16 @@ class RainWeather(WeatherEntity):
                 "datetime": item["datetime"],
                 "condition": item["condition"],
                 "native_temperature": item["temperature"],
+                "native_precipitation": item["precipitation"],
             }
             for item in self._forecast
         ]
+
+    @property
+    def extra_state_attributes(self):
+        attrs = {}
+        if self._min_temp is not None:
+            attrs["min_temp"] = self._min_temp
+        if self._max_temp is not None:
+            attrs["max_temp"] = self._max_temp
+        return attrs
