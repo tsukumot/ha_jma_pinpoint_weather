@@ -1,11 +1,11 @@
 {
   "domain": "jma_pinpoint_weather",
-  "name": "JMA Pinpoint Forecast",
+  "name": "JMA Pinpoint Weather",
   "codeowners": ["@tsukumot"],
   "config_flow": true,
-  "documentation": "https://github.com/tsukumot/jma_pinpoint_weather",
+  "documentation": "https://github.com/tsukumot/ha_jma_pinpoint_weather",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/tsukumot/jma_pinpoint_weather/issues",
+  "issue_tracker": "https://github.com/tsukumot/ha_jma_pinpoint_weather/issues",
   "requirements": [],
-  "version": "0.2.0"
+  "version": "0.4.0"
 }

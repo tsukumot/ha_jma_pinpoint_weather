@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "気象庁ピンポイント予報",
+        "data": {
+          "name": "名前",
+          "location": "地点"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "この地点はすでに登録されています"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "設定",
+        "data": {
+          "nc_interval": "ナウキャストの更新間隔"
+        },
+        "data_description": {
+          "nc_interval": "5〜60分の範囲で指定します。気象庁のデータは5分ごとに更新されます。"
+        }
+      }
+    }
+  }
+}

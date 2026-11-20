@@ -1,10 +1,13 @@
+import logging
 import math
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import requests
 from PIL import Image
-from .const import BASE
+from .const import BASE, BASE_NC
+
+_LOGGER = logging.getLogger(__name__)
 
 COLOR_DICT_WM = {
     (255, 170, 0): "sunny",
@@ -14,16 +17,32 @@ COLOR_DICT_WM = {
     (255, 255, 255): "snowy",
 }
 COLOR_DICT_R3 = {
-    (160, 209, 255): 0.5,
-    (34, 140, 255): 1.5,
-    (1, 65, 255): 3,
-    (255, 245, 0): 5,
-    (255, 153, 0): 7,
+    (160, 209, 255): 1,
+    (34, 140, 255): 3,
+    (1, 65, 255): 5,
+    (255, 245, 0): 7,
+    (255, 153, 0): 10,
 }
 COLOR_DICT_S3 = {
-    (160, 209, 255): 0.5,
-    (34, 140, 255): 1,
-    (1, 65, 255): 2,
+    (160, 209, 255): 1,
+    (34, 140, 255): 2,
+    (1, 65, 255): 3,
+}
+COLOR_DICT_NC = {
+    (242, 242, 255): 1,
+    (160, 209, 255): 5,
+    (34, 140, 255): 10,
+    (1, 65, 255): 20,
+    (255, 245, 0): 30,
+    (255, 153, 0): 50,
+    (254, 41, 0): 80,
+    (180, 0, 104): 100,
+}
+COLOR_DICT_LNC = {
+    (200, 1, 255): 4,
+    (254, 41, 0): 3,
+    (254, 170, 2): 2,
+    (255, 245, 0): 1,
 }
 
 
@@ -77,9 +96,9 @@ def latlon_to_tile(lat, lon, z):
     return int(x), int(y), x - int(x), y - int(y)  # タイル番号と、タイル内の位置(0〜1)
 
 
-def get_pixel(basetime, validtime, element, lat, lon, z=8):
+def get_pixel(basetime, validtime, element, lat, lon, z=8, base=BASE):
     tx, ty, fx, fy = latlon_to_tile(lat, lon, z)
-    url = f"{BASE}/{basetime}/none/{validtime}/surf/{element}/{z}/{tx}/{ty}.png"
+    url = f"{base}/{basetime}/none/{validtime}/surf/{element}/{z}/{tx}/{ty}.png"
     res = requests.get(url, timeout=10)
     res.raise_for_status()
     img = Image.open(BytesIO(res.content)).convert("RGBA")
@@ -102,9 +121,10 @@ _cache = {}  # {(緯度, 経度): (前回のtargetTimes, 前回の予報)}
 
 
 def get_forecast(lat, lon):
-    times = get_target_times()  # 小さいファイルなので毎回取る
+    times = get_target_times()
+    basetime = times[0]["basetime"]
     cached = _cache.get((lat, lon))
-    if cached is not None and cached[0] == times:
+    if cached is not None and cached[0] == basetime:
         return cached[1]  # targetTimesが同じなら、前回の予報をそのまま返す
 
     forecast = []
@@ -118,8 +138,11 @@ def get_forecast(lat, lon):
 
         nxt = sorted_times[i + 1]
         args = (nxt["basetime"], nxt["validtime"])
-        condition = color_to_value(get_pixel(*args, "wm", lat, lon), COLOR_DICT_WM)
         rain = color_to_value(get_pixel(*args, "r3", lat, lon), COLOR_DICT_R3, default=0)
+        if rain > 5:
+            condition = "pouring"
+        else:
+            condition = color_to_value(get_pixel(*args, "wm", lat, lon), COLOR_DICT_WM)
         # snow = color_to_value(get_pixel(*args, "s3", lat, lon), COLOR_DICT_S3, default=0)
         geo = get_temp_geojson(t["basetime"], t["validtime"])
         forecast.append({
@@ -133,10 +156,60 @@ def get_forecast(lat, lon):
     forecast.sort(key=lambda f: f["datetime"])
     result = {"hourly": forecast, "min_temp": None, "max_temp": None}
     result.update(get_first_minmax(times, lat, lon))  # 値があれば上書きする
-    _cache[(lat, lon)] = (times, result)
+    _cache[(lat, lon)] = (basetime, result)
     return result
 
+
+# ---- ナウキャスト(直近1時間の雨量) ----
+def get_nc_times(num=2):
+    res = requests.get(f"{BASE_NC}/targetTimes_N{num}.json", timeout=10)
+    res.raise_for_status()
+    return res.json()
+
+
+_cache_nc = {}  # {(緯度, 経度): (前回のtimes, 前回の合計)}
+
+
+def get_nowcast(lat, lon):
+    times = get_nc_times(2)
+    basetime = times[0]["basetime"]
+    cached = _cache_nc.get((lat, lon))
+    if cached is not None and cached[0] == basetime:
+        return cached[1]
+
+    nowcast = []
+    for t in times:
+        if "hrpns" not in t["elements"]:
+            continue
+        pixel = get_pixel(
+            t["basetime"], t["validtime"], "hrpns", lat, lon, z=10, base=BASE_NC
+        )
+        nowcast.append({
+            "basetime": t["basetime"],
+            "datetime": parse_time(t["validtime"]).isoformat(),
+            "rain": color_to_value(pixel, COLOR_DICT_NC, default=0)
+        })
+
+    nowcast.sort(key=lambda n: n["datetime"])  # 時刻の古い順
+
+    _cache_nc[(lat, lon)] = (basetime, nowcast)
+    return nowcast
+
+
+def get_rain_next_hour(lat, lon):
+    nowcast = get_nowcast(lat, lon)
+    return round(sum(n["rain"] for n in nowcast) * 5 / 60, 1)
+
+
+def already_raining(lat, lon):
+    nowcast = get_nowcast(lat, lon)
+    if not nowcast:
+        return False
+    basetime = nowcast[0]["basetime"]
+    measured = get_pixel(basetime, basetime, "hrpns", lat, lon, z=10, base=BASE_NC)
+    return color_to_value(measured, COLOR_DICT_NC, default=0) > 0
 
 if __name__ == "__main__":
     for item in get_forecast(35.68, 139.77)["hourly"]:
         print(item)
+        print(get_rain_next_hour(35.68, 139.77)) 

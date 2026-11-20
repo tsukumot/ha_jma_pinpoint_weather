@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "JMA Pinpoint Forecast",
+        "data": {
+          "name": "Name",
+          "location": "Location"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This location is already registered"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "nc_interval": "Nowcast update interval"
+        },
+        "data_description": {
+          "nc_interval": "Between 5 and 60 minutes. JMA data updates every 5 minutes."
+        }
+      }
+    }
+  }
+}

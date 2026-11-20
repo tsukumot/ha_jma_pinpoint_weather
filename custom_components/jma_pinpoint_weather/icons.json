@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "sensor": {
+      "amedas_winddirection": { "default": "mdi:compass-outline" },
+      "amedas_snow": { "default": "mdi:snowflake" },
+      "amedas_snow1h": { "default": "mdi:snowflake" },
+      "amedas_snow6h": { "default": "mdi:snowflake" },
+      "amedas_snow12h": { "default": "mdi:snowflake" },
+      "amedas_snow24h": { "default": "mdi:snowflake" },
+      "sun10m": { "default": "mdi:sun-clock-outline" },
+      "sun1h": { "default": "mdi:sun-clock-outline" }
+    }
+  }
+}
