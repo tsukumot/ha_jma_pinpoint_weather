@@ -14,36 +14,42 @@ COLOR_DICT_WM = {
     (170, 170, 170): "cloudy",
     (0, 65, 255): "rainy",
     (160, 210, 255): "snowy-rainy",
-    (255, 255, 255): "snowy",
+    (242, 242, 255): "snowy",
 }
 COLOR_DICT_R3 = {
-    (160, 209, 255): 1,
-    (34, 140, 255): 3,
-    (1, 65, 255): 5,
+    (160, 210, 255): 1,
+    (33, 140, 255): 3,
+    (0, 65, 255): 5,
     (255, 245, 0): 7,
     (255, 153, 0): 10,
 }
 COLOR_DICT_S3 = {
-    (160, 209, 255): 1,
-    (34, 140, 255): 2,
-    (1, 65, 255): 3,
+    (160, 210, 255): 1,
+    (33, 140, 255): 2,
+    (0, 65, 255): 3,
 }
 COLOR_DICT_NC = {
     (242, 242, 255): 1,
-    (160, 209, 255): 5,
-    (34, 140, 255): 10,
-    (1, 65, 255): 20,
+    (160, 210, 255): 5,
+    (33, 140, 255): 10,
+    (0, 65, 255): 20,
     (255, 245, 0): 30,
     (255, 153, 0): 50,
-    (254, 41, 0): 80,
+    (255, 40, 0): 80,
     (180, 0, 104): 100,
 }
 COLOR_DICT_LNC = {
-    (200, 1, 255): 4,
-    (254, 41, 0): 3,
-    (254, 170, 2): 2,
+    (200, 0, 255): 4,
+    (255, 40, 0): 3,
+    (255, 170, 0): 2,
     (255, 245, 0): 1,
 }
+COLOR_DICT_GNC = {
+    (255, 40, 0): 2,
+    (250, 245, 0): 1,
+}
+# ナウキャストの種類ごとのズーム(雨は10、雷・竜巻は8が最大)
+NC_ZOOM = {"rain": 10, "thunder": 8, "tornado": 8}
 
 
 def parse_time(s):
@@ -139,10 +145,7 @@ def get_forecast(lat, lon):
         nxt = sorted_times[i + 1]
         args = (nxt["basetime"], nxt["validtime"])
         rain = color_to_value(get_pixel(*args, "r3", lat, lon), COLOR_DICT_R3, default=0)
-        if rain > 5:
-            condition = "pouring"
-        else:
-            condition = color_to_value(get_pixel(*args, "wm", lat, lon), COLOR_DICT_WM)
+        condition = color_to_value(get_pixel(*args, "wm", lat, lon), COLOR_DICT_WM)
         # snow = color_to_value(get_pixel(*args, "s3", lat, lon), COLOR_DICT_S3, default=0)
         geo = get_temp_geojson(t["basetime"], t["validtime"])
         forecast.append({
@@ -160,54 +163,86 @@ def get_forecast(lat, lon):
     return result
 
 
-# ---- ナウキャスト(直近1時間の雨量) ----
+# ---- ナウキャストJSON ----
 def get_nc_times(num=2):
     res = requests.get(f"{BASE_NC}/targetTimes_N{num}.json", timeout=10)
     res.raise_for_status()
     return res.json()
 
 
-_cache_nc = {}  # {(緯度, 経度): (前回のtimes, 前回の合計)}
+_cache_nc = {}  # {(緯度, 経度, 種類): (前回のtimes, 前回の合計)}
 
 
-def get_nowcast(lat, lon):
-    times = get_nc_times(2)
+def get_nowcast(lat, lon, trg="rain"):
+    if trg == "rain":
+        num, element, colors = 2, "hrpns", COLOR_DICT_NC
+    elif trg == "thunder":
+        num, element, colors = 3, "thns", COLOR_DICT_LNC
+    elif trg == "tornado":
+        num, element, colors = 3, "trns", COLOR_DICT_GNC
+    else:
+        raise ValueError(f"未対応のtrg: {trg}")
+    times = get_nc_times(num)
     basetime = times[0]["basetime"]
-    cached = _cache_nc.get((lat, lon))
+    cached = _cache_nc.get((lat, lon, trg))
     if cached is not None and cached[0] == basetime:
         return cached[1]
 
     nowcast = []
     for t in times:
-        if "hrpns" not in t["elements"]:
+        if element not in t["elements"]:
+            continue
+        if t["basetime"] != basetime:
             continue
         pixel = get_pixel(
-            t["basetime"], t["validtime"], "hrpns", lat, lon, z=10, base=BASE_NC
+            t["basetime"], t["validtime"], element, lat, lon, z=NC_ZOOM[trg], base=BASE_NC
         )
         nowcast.append({
             "basetime": t["basetime"],
             "datetime": parse_time(t["validtime"]).isoformat(),
-            "rain": color_to_value(pixel, COLOR_DICT_NC, default=0)
+            trg: color_to_value(pixel, colors, default=0)
         })
 
     nowcast.sort(key=lambda n: n["datetime"])  # 時刻の古い順
 
-    _cache_nc[(lat, lon)] = (basetime, nowcast)
+    _cache_nc[(lat, lon, trg)] = (basetime, nowcast)
     return nowcast
 
 
 def get_rain_next_hour(lat, lon):
-    nowcast = get_nowcast(lat, lon)
-    return round(sum(n["rain"] for n in nowcast) * 5 / 60, 1)
+    trg = "rain"
+    nowcast = get_nowcast(lat, lon, trg)
+    return round(sum(n[trg] for n in nowcast) * 5 / 60, 1)
 
 
 def already_raining(lat, lon):
-    nowcast = get_nowcast(lat, lon)
+    nowcast = get_nowcast(lat, lon, "rain")
     if not nowcast:
         return False
     basetime = nowcast[0]["basetime"]
-    measured = get_pixel(basetime, basetime, "hrpns", lat, lon, z=10, base=BASE_NC)
+    measured = get_pixel(basetime, basetime, "hrpns", lat, lon, z=NC_ZOOM["rain"], base=BASE_NC)
     return color_to_value(measured, COLOR_DICT_NC, default=0) > 0
+
+
+def get_thunder_now(lat, lon):
+    """現在値(basetime = validtime のタイル)を返す"""
+    nowcast = get_nowcast(lat, lon, "thunder")
+    if not nowcast:
+        return None
+    basetime = nowcast[0]["basetime"]
+    pixel = get_pixel(basetime, basetime, "thns", lat, lon, z=NC_ZOOM["thunder"], base=BASE_NC)
+    return color_to_value(pixel, COLOR_DICT_LNC, default=0)
+
+
+def get_tornado_now(lat, lon):
+    """現在値(basetime = validtime のタイル)を返す"""
+    nowcast = get_nowcast(lat, lon, "tornado")
+    if not nowcast:
+        return None
+    basetime = nowcast[0]["basetime"]
+    pixel = get_pixel(basetime, basetime, "trns", lat, lon, z=NC_ZOOM["tornado"], base=BASE_NC)
+    return color_to_value(pixel, COLOR_DICT_GNC, default=0)
+
 
 if __name__ == "__main__":
     for item in get_forecast(35.68, 139.77)["hourly"]:

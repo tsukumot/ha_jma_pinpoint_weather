@@ -18,7 +18,7 @@
       "init": {
         "title": "設定",
         "data": {
-          "nc_interval": "ナウキャストの更新間隔"
+          "nc_interval": "降水ナウキャストの更新間隔"
         },
         "data_description": {
           "nc_interval": "5〜60分の範囲で指定します。気象庁のデータは5分ごとに更新されます。"

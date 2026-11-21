@@ -10,6 +10,14 @@ from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
+    CONF_POURING_THRESHOLD,
+    DEF_POURING_THRESHOLD,
+    MIN_POURING_THRESHOLD,
+    MAX_POURING_THRESHOLD,
+    CONF_LIGHTNING_THRESHOLD,
+    DEF_LIGHTNING_THRESHOLD,
+    MIN_LIGHTNING_THRESHOLD,
+    MAX_LIGHTNING_THRESHOLD,
     CONF_NC_INTERVAL,
     DEF_NC_INTERVAL,
     MIN_NC_INTERVAL,
@@ -18,10 +26,6 @@ from .const import (
     DEF_NC_THRESHOLD,
     MIN_NC_THRESHOLD,
     MAX_NC_THRESHOLD,
-    CONF_LNC_THRESHOLD,
-    DEF_LNC_THRESHOLD,
-    MIN_LNC_THRESHOLD,
-    MAX_LNC_THRESHOLD,
     CONF_GNC_THRESHOLD,
     DEF_GNC_THRESHOLD,
     MIN_GNC_THRESHOLD,
@@ -89,6 +93,20 @@ class RainForecastOptionsFlow(OptionsFlow):
                             max=MAX_NC_INTERVAL,
                             step=1,
                             unit_of_measurement="分",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Coerce(int),
+                ),
+                vol.Required(
+                    CONF_POURING_THRESHOLD,
+                    default=self.config_entry.options.get(CONF_POURING_THRESHOLD, DEF_POURING_THRESHOLD),
+                ): vol.All(
+                    selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_POURING_THRESHOLD,
+                            max=MAX_POURING_THRESHOLD,
+                            step=1,
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),

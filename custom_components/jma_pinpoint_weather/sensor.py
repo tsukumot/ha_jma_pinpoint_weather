@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from .amedas import get_amedas
 from .const import CONF_NC_INTERVAL, DEF_NC_INTERVAL, device_info
-from .forecast import get_nowcast, already_raining, parse_time
+from .forecast import get_nowcast, already_raining, parse_time, get_thunder_now, get_tornado_now
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +63,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
     lon = entry.data["longitude"]
 
     async def _update():
-        return await hass.async_add_executor_job(get_amedas, lat, lon)
+        try:
+            return await hass.async_add_executor_job(get_amedas, lat, lon)
+        except Exception:
+            _LOGGER.exception("アメダス取得に失敗")
+            raise
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -88,12 +92,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     def _fetch_nc():
         return {
-            "nowcast": get_nowcast(lat, lon),
+            "nowcast": get_nowcast(lat, lon, "rain"),
             "raining": already_raining(lat, lon),
         }
 
     async def _update_nc():
-        return await hass.async_add_executor_job(_fetch_nc)
+        try:
+            return await hass.async_add_executor_job(_fetch_nc)
+        except Exception:
+            _LOGGER.exception("ナウキャスト取得に失敗")
+            raise
 
     interval = entry.options.get(CONF_NC_INTERVAL, DEF_NC_INTERVAL)
     nc_coordinator = DataUpdateCoordinator(
@@ -106,6 +114,54 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
     await nc_coordinator.async_config_entry_first_refresh()
     entities.append(RainStartSensor(nc_coordinator, entry))
+
+    def _fetch_thunder():
+        return {
+            "nowcast": get_nowcast(lat, lon, "thunder"),
+            "now": get_thunder_now(lat, lon),
+        }
+
+    async def _update_thunder():
+        try:
+            return await hass.async_add_executor_job(_fetch_thunder)
+        except Exception:
+            _LOGGER.exception("雷ナウキャスト取得に失敗")
+            raise
+
+    thunder_coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        config_entry=entry,
+        name="thunder_nowcast",
+        update_method=_update_thunder,
+        update_interval=timedelta(minutes=interval),
+    )
+    await thunder_coordinator.async_config_entry_first_refresh()
+    entities.append(ThunderSensor(thunder_coordinator, entry))
+
+    def _fetch_tornado():
+        return {
+            "nowcast": get_nowcast(lat, lon, "tornado"),
+            "now": get_tornado_now(lat, lon),
+        }
+
+    async def _update_tornado():
+        try:
+            return await hass.async_add_executor_job(_fetch_tornado)
+        except Exception:
+            _LOGGER.exception("竜巻ナウキャスト取得に失敗")
+            raise
+
+    tornado_coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        config_entry=entry,
+        name="tornado_nowcast",
+        update_method=_update_tornado,
+        update_interval=timedelta(minutes=interval),
+    )
+    await tornado_coordinator.async_config_entry_first_refresh()
+    entities.append(TornadoSensor(tornado_coordinator, entry))
 
     async_add_entities(entities)
 
@@ -143,7 +199,7 @@ class RainStartSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator)
-        self._attr_name = f"{entry.data['name']} ナウキャスト降り始め"
+        self._attr_name = f"{entry.data['name']} ナウキャスト降水開始"
         self._attr_unique_id = f"{entry.unique_id}_rain_start"
         self._attr_device_info = device_info(entry)
         self._start = None  # 覚えておく降り始め時刻
@@ -183,6 +239,61 @@ class RainStartSensor(CoordinatorEntity, SensorEntity):
                         datetime.fromisoformat(item["datetime"])
                     ).isoformat(),
                     "rain": item["rain"],
+                }
+                for item in self.coordinator.data["nowcast"]
+            ]
+        }
+
+
+class ThunderSensor(CoordinatorEntity, SensorEntity):
+    _attr_icon = "mdi:flash"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_name = f"{entry.data['name']} ナウキャスト雷活動度"
+        self._attr_unique_id = f"{entry.unique_id}_thunder_now"
+        self._attr_device_info = device_info(entry)
+
+    @property
+    def native_value(self):
+        return self.coordinator.data["now"]
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "forecast": [
+                {
+                    "datetime": dt_util.as_local(
+                        datetime.fromisoformat(item["datetime"])
+                    ).isoformat(),
+                    "thunder": item["thunder"],
+                }
+                for item in self.coordinator.data["nowcast"]
+            ]
+        }
+
+class TornadoSensor(CoordinatorEntity, SensorEntity):
+    _attr_icon = "mdi:weather-tornado"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_name = f"{entry.data['name']} ナウキャスト竜巻発生確度"
+        self._attr_unique_id = f"{entry.unique_id}_tornado_now"
+        self._attr_device_info = device_info(entry)
+
+    @property
+    def native_value(self):
+        return self.coordinator.data["now"]
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "forecast": [
+                {
+                    "datetime": dt_util.as_local(
+                        datetime.fromisoformat(item["datetime"])
+                    ).isoformat(),
+                    "tornado": item["tornado"],
                 }
                 for item in self.coordinator.data["nowcast"]
             ]
